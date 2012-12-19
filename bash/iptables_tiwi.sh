@@ -15,9 +15,9 @@ IPTR="/sbin/iptables-restore"
 
 # External Router
 EXT_INET_IFACE="eth0"
-EXT_INET_IP="192.168.16.68"
+EXT_INET_IP=`ifconfig $EXT_INET_IFACE | grep 'inet addr' | awk '{print $2}' | sed -e 's/.*://'`
 EXT_INET_NET="192.168.16.0/24"
-EXT_INET_BCAST="192.168.16.255"
+EXT_INET_BCAST=`ifconfig $EXT_INET_IFACE | grep 'inet addr' | awk '{print $3}' | sed -e 's/.*://'`
 
 EXT_DMZ_IFACE="eth1"
 EXT_DMZ_ADDRESS="192.168.70.254"
