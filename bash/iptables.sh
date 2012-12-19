@@ -64,14 +64,14 @@ dropcurrentconfig() {
 
 }
 
-acceptpolicy(){
+accept_policy(){
     # Reset Default Accept Policies
     iptables -P INPUT ACCEPT
     iptables -P FORWARD ACCEPT
     iptables -P OUTPUT ACCEPT
 }
 
-droppolicy(){
+drop_policy(){
     # Reset Default Drop Policies
     iptables -P INPUT DROP
     iptables -P FORWARD DROP
@@ -90,19 +90,24 @@ logging(){
     iptables -A OUTPUT -m state --state INVALID -j DROP
 }
 
+enable_forwarding(){
+	# Enable IPv4 Forwarding
+    echo 1 > /proc/sys/net/ipv4/ip_forward
+}
 
-external_router() {
-    #echo 1 > /proc/sys/net/ipv4/ip_forward # Enable routing
-
-    # prevent freezes
+local_traffic(){
+    # Prevent Freezes
     iptables -I INPUT -d $LO_IP -j ACCEPT
     iptables -I OUTPUT -s $LO_IP -j ACCEPT
+}
 
+
+external_router() {
     # Allow rip (UDP/520, RIPng: UPD/521)
-    iptables -I INPUT -i $EXT_INET_IFACE -p udp --dport 520 -j ACCEPT
-    iptables -I OUTPUT -o $EXT_INET_IFACE -p udp --sport 520 -j ACCEPT
-    iptables -I INPUT -i $EXT_INET_IFACE -p udp --dport 521 -j ACCEPT
-    iptables -I OUTPUT -o $EXT_INET_IFACE -p udp --sport 521 -j ACCEPT
+    iptables -I INPUT -i $EXT_INET_IFACE -p udp --dport router -j ACCEPT
+    iptables -I OUTPUT -o $EXT_INET_IFACE -p udp --sport router -j ACCEPT
+    iptables -I INPUT -i $EXT_INET_IFACE -p udp --dport ripng -j ACCEPT
+    iptables -I OUTPUT -o $EXT_INET_IFACE -p udp --sport ripng -j ACCEPT
 
     iptables -I INPUT -p igmp -j ACCEPT
     iptables -I OUTPUT -p igmp -j ACCEPT
@@ -123,15 +128,15 @@ external_router() {
     iptables -I FORWARD -s $DMZ_NET -o $EXT_INET_IFACE -p udp --sport domain -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
     # Allow internet to access smtp server in dmz
-    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_NET -p tcp --dport 25 -j ACCEPT
-    iptables -I FORWARD -s $DMZ_NET -o $EXT_INET_IFACE -p tcp --sport 25 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_NET -p tcp --dport smtp -j ACCEPT
+    iptables -I FORWARD -s $DMZ_NET -o $EXT_INET_IFACE -p tcp --sport smtp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
     iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_NET -p tcp --dport submission -j ACCEPT
     iptables -I FORWARD -s $DMZ_NET -o $EXT_INET_IFACE -p tcp --sport submission -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
     # Allow bastion host to access ssh server from internet
-    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport 22 -j ACCEPT
-    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport 22 -j LOG --log-prefix "Secure Shell: "
-    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p tcp --sport 22 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport ssh -j ACCEPT
+    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport ssh -j LOG --log-prefix "Secure Shell: "
+    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p tcp --sport ssh -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
     # Allow bastion host to access http server from internet
     iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport http -j ACCEPT
@@ -142,21 +147,14 @@ external_router() {
     iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p udp --sport domain -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
     # Allow bastion host to access mail server from internet
-    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport 25 -j ACCEPT
-    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p tcp --sport 25 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport smtp -j ACCEPT
+    iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p tcp --sport smtp -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
     iptables -I FORWARD -s $DMZ_BASTIONHOST -o $EXT_INET_IFACE -p tcp --dport submission -j ACCEPT
     iptables -I FORWARD -i $EXT_INET_IFACE -d $DMZ_BASTIONHOST -p tcp --sport submission -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-
 }
 
 internal_router(){
-
-
-    # prevent freezes
-    iptables -I INPUT -d $LO_IP -j ACCEPT
-    iptables -I OUTPUT -s $LO_IP -j ACCEPT
-
-    #ICMP toelaten
+    # Allow ICMP from LAN to DMZ 
     iptables -I INPUT -p icmp -s $DMZ_NET -j ACCEPT
     iptables -I INPUT -p icmp -s $INT_LAN_NET -j ACCEPT
     iptables -I FORWARD -p icmp -s $DMZ_NET -j ACCEPT
@@ -164,19 +162,19 @@ internal_router(){
     iptables -I OUTPUT -p icmp -d $DMZ_NET -j ACCEPT
     iptables -I OUTPUT -p icmp -d $INT_LAN_NET -j ACCEPT
 
-    #DNS server hilbert (192.168.70.1)
+    # Allow DNS traffic to Bastion Host
     iptables -I FORWARD -p udp -d $DMZ_BASTIONHOST --dport domain -j ACCEPT
     iptables -I FORWARD -p udp -s $DMZ_BASTIONHOST -m conntrack --ctstate ESTABLISHED,RELATED --sport domain -j ACCEPT
 
-    #HTTP
+    # Allow HTTP traffic to Bastion Host
     iptables -I FORWARD -p tcp -d $DMZ_BASTIONHOST --dport http -j ACCEPT
     iptables -I FORWARD -p tcp -s $DMZ_BASTIONHOST -m conntrack --ctstate ESTABLISHED,RELATED --sport http -j ACCEPT
 
-    #SSH
+    # Allow SSH traffic to Bastion Host
     iptables -I FORWARD -p tcp -d $DMZ_BASTIONHOST --dport ssh -j ACCEPT
     iptables -I FORWARD -p tcp -s $DMZ_BASTIONHOST -m conntrack --ctstate ESTABLISHED,RELATED --sport ssh -j ACCEPT
 
-    #MAIL
+    # Allow MAIL traffic to Bastion Host
     iptables -I FORWARD -p tcp -d $DMZ_BASTIONHOST --dport smtp -j ACCEPT
     iptables -I FORWARD -p tcp -s $DMZ_BASTIONHOST -m conntrack --ctstate ESTABLISHED,RELATED --sport smtp -j ACCEPT
     iptables -I FORWARD -p tcp -d $DMZ_BASTIONHOST --dport submission -j ACCEPT
@@ -207,14 +205,18 @@ case $1 in
     external)
         echo "Setting up iptables for external router ... "
         dropcurrentconfig   &&  echo " -> IPTable configuration flushed."
-        acceptpolicy        &&  echo " -> IPTable default accept policy."
+        accept_policy        &&  echo " -> IPTable default accept policy."
+        enable_forwarding   &&  echo " -> Enable IPv4 forwarding."
+        local_traffic       &&  echo " -> Enable local traffic (to prevent freezes)"
         external_router     &&  echo " -> Setting up external router."
         reject_undefined    &&  echo " -> Reject undefined."
     ;;
     internal)
         echo "Setting up iptables for internal router ... "
         dropcurrentconfig   &&  echo " -> IPTable configuration flushed."
-        acceptpolicy        &&  echo " -> IPTable default accept policy."
+        accept_policy        &&  echo " -> IPTable default accept policy."
+        enable_forwarding   &&  echo " -> Enable IPv4 forwarding."
+        local_traffic       &&  echo " -> Enable local traffic (to prevent freezes)"
         internal_router     &&  echo " -> Setting up internal router."
         reject_undefined    &&  echo " -> Reject undefined."
     ;;
@@ -230,9 +232,6 @@ case $1 in
         echo "Drop current configuration..."
         dropcurrentconfig   &&  echo " -> IPTable configuration flushed."
         acceptpolicy        &&  echo " -> Accept policy enabled."
-    ;;
-    restart)
-        $0 flush
     ;;
     *)
         echo "usage: $0 external|internal|bastion|reset|flush"
