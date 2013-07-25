@@ -4,13 +4,13 @@
 #the timestamp, and the image will be saved in png-format
 
 #prefix for remote url
-remote_uri="http://shots.ahta.nu/"
+remote_uri="http://shots.server.com/"
 
 #default dir where the screenshot will be stored locally
-local_dir="/home/ahluntang/shots/"
+local_dir="/home/user/shots/"
 
 #ftp_server remote server and dir where screenshot will be uploaded
-ftp_server="shots.ahta.nu/public_html"
+ftp_server="shots.server.com/public"
 
 #login for ftp
 ftp_login=""
