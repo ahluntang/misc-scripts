@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Author    : Jens Segers
+# URL       : https://github.com/jenssegers/git-deploy/blob/master/post-receive
+# License   : MIT License 
+
+
+# Update the working tree after changes have been pushed here
+cd ..
+env -i git checkout -f
+
+# Check if a composer.json file is present
+if [ -f composer.json ]; then
+
+    # Run composer if composer.json is updated
+    if [ composer.json -nt composer.lock ]; then
+
+        echo "Updating Composer packages"
+
+        # Detect composer binary
+        if which composer >/dev/null; then
+            composer='composer'
+        elif which composer.phar >/dev/null; then
+            composer='composer.phar'
+        else
+            # Install composer
+            curl -s http://getcomposer.org/installer | php >/dev/null
+            composer='php composer.phar'
+        fi
+
+        # Do install or update depending on lock file
+        [ ! -f composer.lock ] && $composer install || $composer update
+
+    else
+        echo "Composer packages up to date"
+    fi
+fi
